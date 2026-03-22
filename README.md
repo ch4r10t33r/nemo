@@ -1,5 +1,9 @@
 # Nemo
 
+<p align="center">
+  <img src="frontend/public/nemo-logo.png" alt="Nemo logo" width="220" />
+</p>
+
 Lightweight block/slot explorer for the **Lean Ethereum** consensus chain, inspired by [Dora the Explorer](https://github.com/ethpandaops/dora).
 
 ## Monorepo layout
