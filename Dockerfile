@@ -8,7 +8,8 @@ RUN npm run build
 
 # backend/ — Zig HTTP server + SQLite
 FROM alpine:3.21 AS zigbuild
-RUN apk add --no-cache wget tar xz
+# sqlite-dev: libsqlite3 for zig linkSystemLibrary("sqlite3") at build time
+RUN apk add --no-cache wget tar xz sqlite-dev
 ARG ZIG_VERSION=0.15.2
 # Injected per slice by buildx; plain `docker build` may leave empty — default in shell.
 ARG TARGETARCH

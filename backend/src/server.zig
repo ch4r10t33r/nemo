@@ -10,6 +10,26 @@ pub const App = struct {
     db: db_mod.Db,
     db_mu: std.Thread.Mutex,
 
+    fn logNewIndexedSlots(a: std.mem.Allocator, prev_max: u64, fc: lean_types.ForkChoice, source_url: []const u8) void {
+        var slots: std.ArrayList(u64) = .empty;
+        defer slots.deinit(a);
+        for (fc.nodes) |n| {
+            if (n.slot > prev_max) {
+                slots.append(a, n.slot) catch return;
+            }
+        }
+        if (slots.items.len == 0) return;
+
+        std.mem.sort(u64, slots.items, {}, comptime std.sort.asc(u64));
+        var i: usize = 0;
+        while (i < slots.items.len) {
+            const s = slots.items[i];
+            std.log.info("indexed slot {d} (upstream {s})", .{ s, source_url });
+            i += 1;
+            while (i < slots.items.len and slots.items[i] == s) i += 1;
+        }
+    }
+
     pub fn deinit(self: *App) void {
         self.db_mu.lock();
         self.db.close();
@@ -22,43 +42,66 @@ pub const App = struct {
         defer arena.deinit();
         const a = arena.allocator();
 
-        const fetch = lean_client.getJson(a, self.cfg.lean_urls, "/lean/v0/fork_choice") catch return;
-        defer lean_client.deinitFetchResult(a, &fetch);
-
-        const parsed = std.json.parseFromSlice(lean_types.ForkChoice, a, fetch.body, .{
-            .ignore_unknown_fields = true,
-        }) catch return;
-        defer parsed.deinit();
-
         const now_ms: i64 = @intCast(@divFloor(std.time.nanoTimestamp(), std.time.ns_per_ms));
 
-        self.db_mu.lock();
-        defer self.db_mu.unlock();
-        self.db.persistForkChoice(parsed.value, fetch.body, fetch.source_url, now_ms) catch return;
+        for (self.cfg.lean_urls) |base| {
+            const fetch = lean_client.fetchJsonSingleBase(a, base, "/lean/v0/fork_choice") catch continue;
+            defer lean_client.deinitFetchResult(a, &fetch);
+
+            const parsed = std.json.parseFromSlice(lean_types.ForkChoice, a, fetch.body, .{
+                .ignore_unknown_fields = true,
+            }) catch continue;
+            defer parsed.deinit();
+
+            self.db_mu.lock();
+            const prev_max = self.db.maxIndexedSlot() catch {
+                self.db_mu.unlock();
+                continue;
+            };
+            self.db.persistForkChoice(parsed.value, fetch.body, fetch.source_url, now_ms) catch {
+                self.db_mu.unlock();
+                continue;
+            };
+            self.db_mu.unlock();
+
+            logNewIndexedSlots(a, prev_max, parsed.value, fetch.source_url);
+            return;
+        }
     }
 
     fn forkChoiceLive(self: *App, arena: std.mem.Allocator) !struct { body: []u8, stale: bool } {
-        const fetch = lean_client.getJson(arena, self.cfg.lean_urls, "/lean/v0/fork_choice") catch {
-            self.db_mu.lock();
-            defer self.db_mu.unlock();
-            const snap = self.db.latestSnapshotJson(self.allocator) orelse return error.NoData;
-            return .{ .body = snap, .stale = true };
-        };
-        defer lean_client.deinitFetchResult(arena, &fetch);
-
-        const parsed = try std.json.parseFromSlice(lean_types.ForkChoice, arena, fetch.body, .{
-            .ignore_unknown_fields = true,
-        });
-        defer parsed.deinit();
-
         const now_ms: i64 = @intCast(@divFloor(std.time.nanoTimestamp(), std.time.ns_per_ms));
 
-        self.db_mu.lock();
-        self.db.persistForkChoice(parsed.value, fetch.body, fetch.source_url, now_ms) catch {};
-        self.db_mu.unlock();
+        for (self.cfg.lean_urls) |base| {
+            const fetch = lean_client.fetchJsonSingleBase(arena, base, "/lean/v0/fork_choice") catch continue;
+            defer lean_client.deinitFetchResult(arena, &fetch);
 
-        const owned = try self.allocator.dupe(u8, fetch.body);
-        return .{ .body = owned, .stale = false };
+            const parsed = std.json.parseFromSlice(lean_types.ForkChoice, arena, fetch.body, .{
+                .ignore_unknown_fields = true,
+            }) catch continue;
+            defer parsed.deinit();
+
+            self.db_mu.lock();
+            const prev_max = self.db.maxIndexedSlot() catch {
+                self.db_mu.unlock();
+                continue;
+            };
+            self.db.persistForkChoice(parsed.value, fetch.body, fetch.source_url, now_ms) catch {
+                self.db_mu.unlock();
+                continue;
+            };
+            self.db_mu.unlock();
+
+            logNewIndexedSlots(arena, prev_max, parsed.value, fetch.source_url);
+
+            const owned = try self.allocator.dupe(u8, fetch.body);
+            return .{ .body = owned, .stale = false };
+        }
+
+        self.db_mu.lock();
+        defer self.db_mu.unlock();
+        const snap = self.db.latestSnapshotJson(self.allocator) orelse return error.NoData;
+        return .{ .body = snap, .stale = true };
     }
 
     fn respondJson(request: *std.http.Server.Request, status: std.http.Status, body: []const u8, extra: []const std.http.Header) !void {
@@ -184,6 +227,12 @@ pub const App = struct {
             return;
         }
 
+        if (std.mem.eql(u8, path_only, "/nemo-logo.png")) {
+            self.serveDistRootFile(&request, "nemo-logo.png") catch respond404(&request) catch {};
+            connection.stream.close();
+            return;
+        }
+
         if (std.mem.startsWith(u8, path_only, "/assets/")) {
             self.serveStatic(&request, path_only) catch respond404(&request) catch {};
             connection.stream.close();
@@ -203,16 +252,20 @@ pub const App = struct {
     fn handleHealth(self: *App, request: *std.http.Server.Request, arena: std.mem.Allocator) !void {
         _ = arena;
         var lean_ok = false;
-        if (lean_client.getJson(self.allocator, self.cfg.lean_urls, "/lean/v0/health")) |fr| {
+        for (self.cfg.lean_urls) |base| {
+            const fr = lean_client.fetchJsonSingleBase(self.allocator, base, "/lean/v0/health") catch continue;
             defer lean_client.deinitFetchResult(self.allocator, &fr);
-            if (std.json.parseFromSlice(lean_types.Health, self.allocator, fr.body, .{
+            const parsed = std.json.parseFromSlice(lean_types.Health, self.allocator, fr.body, .{
                 .ignore_unknown_fields = true,
-            })) |parsed| {
-                defer parsed.deinit();
-                lean_ok = std.mem.eql(u8, parsed.value.status, "healthy") or
-                    std.mem.eql(u8, parsed.value.status, "ok");
-            } else |_| {}
-        } else |_| {}
+            }) catch continue;
+            defer parsed.deinit();
+            const ok = std.mem.eql(u8, parsed.value.status, "healthy") or
+                std.mem.eql(u8, parsed.value.status, "ok");
+            if (ok) {
+                lean_ok = true;
+                break;
+            }
+        }
 
         self.db_mu.lock();
         const meta = self.db.latestMeta(self.allocator) catch null;
@@ -269,24 +322,45 @@ pub const App = struct {
             limit = std.fmt.parseInt(usize, rest[0..end], 10) catch 200;
             if (limit > 2000) limit = 2000;
         }
+        var offset: usize = 0;
+        if (std.mem.indexOf(u8, target, "offset=")) |i| {
+            const start = i + "offset=".len;
+            const rest = target[start..];
+            const end = std.mem.indexOfScalar(u8, rest, '&') orelse rest.len;
+            offset = std.fmt.parseInt(usize, rest[0..end], 10) catch 0;
+            if (offset > 1_000_000) offset = 1_000_000;
+        }
 
         self.db_mu.lock();
-        const slots = self.db.listSlots(self.allocator, limit) catch {
+        var page = self.db.listSlots(self.allocator, limit, offset) catch {
             self.db_mu.unlock();
             return error.DbError;
         };
         self.db_mu.unlock();
-        defer self.allocator.free(slots);
+
+        if (page.slots.len == 0) {
+            self.syncOnce();
+            self.allocator.free(page.slots);
+            self.db_mu.lock();
+            page = self.db.listSlots(self.allocator, limit, offset) catch {
+                self.db_mu.unlock();
+                return error.DbError;
+            };
+            self.db_mu.unlock();
+        }
+
+        defer self.allocator.free(page.slots);
 
         var buf: std.ArrayList(u8) = .empty;
         defer buf.deinit(self.allocator);
         const w = buf.writer(self.allocator);
         try w.writeAll("{\"slots\":[");
-        for (slots, 0..) |s, idx| {
+        for (page.slots, 0..) |s, idx| {
             if (idx > 0) try w.writeByte(',');
             try w.print("{d}", .{s});
         }
-        try w.print("],\"limit\":{d}", .{limit});
+        try w.print("],\"limit\":{d},\"offset\":{d},\"has_more\":", .{ limit, offset });
+        try w.writeAll(if (page.has_more) "true" else "false");
         try w.writeByte('}');
 
         try respondJson(request, .ok, buf.items, &.{});
@@ -294,11 +368,24 @@ pub const App = struct {
 
     fn handleSlot(self: *App, request: *std.http.Server.Request, slot: u64) !void {
         self.db_mu.lock();
-        const rows = self.db.blocksAtSlot(self.allocator, slot) catch {
+        var rows = self.db.blocksAtSlot(self.allocator, slot) catch {
             self.db_mu.unlock();
             return error.DbError;
         };
         self.db_mu.unlock();
+
+        if (rows.len == 0) {
+            self.syncOnce();
+            for (rows) |r| r.deinit(self.allocator);
+            self.allocator.free(rows);
+            self.db_mu.lock();
+            rows = self.db.blocksAtSlot(self.allocator, slot) catch {
+                self.db_mu.unlock();
+                return error.DbError;
+            };
+            self.db_mu.unlock();
+        }
+
         defer {
             for (rows) |r| r.deinit(self.allocator);
             self.allocator.free(rows);
@@ -336,14 +423,25 @@ pub const App = struct {
 
     fn handleBlock(self: *App, request: *std.http.Server.Request, hex_root: []const u8) !void {
         self.db_mu.lock();
-        const row = self.db.blockByRoot(self.allocator, hex_root) catch {
+        var maybe_row = self.db.blockByRoot(self.allocator, hex_root) catch {
             self.db_mu.unlock();
             return error.DbError;
         };
         self.db_mu.unlock();
-        defer if (row) |r| r.deinit(self.allocator);
 
-        const b = row orelse {
+        if (maybe_row == null) {
+            self.syncOnce();
+            self.db_mu.lock();
+            maybe_row = self.db.blockByRoot(self.allocator, hex_root) catch {
+                self.db_mu.unlock();
+                return error.DbError;
+            };
+            self.db_mu.unlock();
+        }
+
+        defer if (maybe_row) |r| r.deinit(self.allocator);
+
+        const b = maybe_row orelse {
             try respondJson(request, .not_found, "{\"error\":\"block_not_found\"}", &.{});
             return;
         };
@@ -396,6 +494,21 @@ pub const App = struct {
         const data = file.readToEndAlloc(self.allocator, 4 * 1024 * 1024) catch return error.ReadFailed;
         defer self.allocator.free(data);
         const ct = contentType(rel);
+        try respondText(request, .ok, ct, data);
+    }
+
+    /// Single file from `web_dist` root (e.g. Vite `public/` copies).
+    fn serveDistRootFile(self: *App, request: *std.http.Server.Request, basename: []const u8) !void {
+        if (basename.len == 0 or std.mem.indexOfScalar(u8, basename, '/') != null or std.mem.startsWith(u8, basename, ".")) {
+            return error.BadPath;
+        }
+        const path = try std.fs.path.join(self.allocator, &.{ self.cfg.web_dist, basename });
+        defer self.allocator.free(path);
+        const file = std.fs.cwd().openFile(path, .{}) catch return error.NotFound;
+        defer file.close();
+        const data = file.readToEndAlloc(self.allocator, 4 * 1024 * 1024) catch return error.ReadFailed;
+        defer self.allocator.free(data);
+        const ct = contentType(basename);
         try respondText(request, .ok, ct, data);
     }
 };

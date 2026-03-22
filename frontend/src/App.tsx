@@ -8,8 +8,16 @@ export default function App() {
   return (
     <>
       <header>
-        <h1>Nemo</h1>
-        <span className="sub">Lean Ethereum explorer</span>
+        <div className="brand">
+          <h1 className="brand-title">
+            <img
+              src={`${import.meta.env.BASE_URL}nemo-logo.png`}
+              alt="Nemo"
+              className="brand-logo"
+            />
+          </h1>
+          <span className="sub">Lean Ethereum explorer</span>
+        </div>
         <nav>
           <NavLink to="/" end>
             Overview

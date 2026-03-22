@@ -9,7 +9,7 @@ Nemo calls the existing leanSpec node API. Base URL is configurable (e.g. `http:
 | Method | Path | Response | Description |
 |--------|------|----------|-------------|
 | GET | `/lean/v0/health` | JSON | Health check. |
-| GET | `/lean/v0/fork_choice` | JSON | Fork choice tree: nodes (blocks with root, slot, parent_root, proposer_index, weight), head, justified, finalized, safe_target, validator_count. |
+| GET | `/lean/v0/fork_choice` | JSON | Fork choice tree: **nodes** lists blocks (leanSpec includes the full `store.blocks` set, including pre-finalization history, for late-starting indexers), plus head, justified, finalized, safe_target, validator_count. |
 | GET | `/lean/v0/checkpoints/justified` | JSON | Latest justified checkpoint: `slot`, `root` (0x-prefixed hex). |
 | GET | `/lean/v0/states/finalized` | **SSZ (binary)** | Finalized beacon state as raw SSZ (`application/octet-stream`). Nemo: proxy as download or use fork_choice for summary; do not parse as JSON. Optional for MVP. |
 

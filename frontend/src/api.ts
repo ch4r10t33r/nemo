@@ -25,7 +25,12 @@ export type Health = {
   };
 };
 
-export type SlotsResponse = { slots: number[]; limit: number };
+export type SlotsResponse = {
+  slots: number[];
+  limit: number;
+  offset: number;
+  has_more: boolean;
+};
 
 export type SlotDetail = {
   slot: number;
@@ -67,8 +72,8 @@ export async function getForkChoice(): Promise<{ data: ForkChoice; stale: boolea
   return { data, stale };
 }
 
-export async function getSlots(limit = 200): Promise<SlotsResponse> {
-  return fetchJson<SlotsResponse>(`/api/slots?limit=${limit}`);
+export async function getSlots(limit = 200, offset = 0): Promise<SlotsResponse> {
+  return fetchJson<SlotsResponse>(`/api/slots?limit=${limit}&offset=${offset}`);
 }
 
 export async function getSlot(slot: number): Promise<SlotDetail> {

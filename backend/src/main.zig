@@ -25,7 +25,10 @@ pub fn main() !void {
     defer listen.deinit();
 
     std.log.info("nemo listening on http://0.0.0.0:{d}", .{app.cfg.port});
-    std.log.info("lean upstreams: {s}", .{app.cfg.lean_urls[0]});
+    std.log.info("lean upstreams ({d}, tried in order):", .{app.cfg.lean_urls.len});
+    for (app.cfg.lean_urls) |u| {
+        std.log.info("  {s}", .{u});
+    }
     std.log.info("database: {s}", .{app.cfg.db_path});
     std.log.info("static assets: {s}", .{app.cfg.web_dist});
 

@@ -291,19 +291,45 @@ pub const Db = struct {
         };
     }
 
-    pub fn listSlots(self: *Db, allocator: std.mem.Allocator, limit: usize) ![]u64 {
+    /// Highest `slot` in `block_record`, or 0 if empty.
+    pub fn maxIndexedSlot(self: *Db) !u64 {
         var stmt: ?*sqlite3_stmt = null;
         defer _ = sqlite3_finalize(stmt);
-        const sql = "SELECT DISTINCT slot FROM block_record ORDER BY slot DESC LIMIT ?";
+        const sql = "SELECT COALESCE(MAX(slot), 0) FROM block_record";
         if (sqlite3_prepare_v2(self.raw, sql, -1, &stmt, null) != SQLITE_OK or stmt == null) return error.SqlitePrepareFailed;
         const st = stmt.?;
-        _ = sqlite3_bind_int64(st, 1, @intCast(limit));
+        if (sqlite3_step(st) != SQLITE_ROW) return error.SqliteBadRow;
+        return @intCast(sqlite3_column_int64(st, 0));
+    }
+
+    pub const SlotsPage = struct {
+        slots: []u64,
+        has_more: bool,
+    };
+
+    /// Distinct slots, newest first. Fetches up to `limit + 1` rows to detect `has_more`.
+    pub fn listSlots(self: *Db, allocator: std.mem.Allocator, limit: usize, offset: usize) !SlotsPage {
+        const take = limit + 1;
+        var stmt: ?*sqlite3_stmt = null;
+        defer _ = sqlite3_finalize(stmt);
+        const sql = "SELECT DISTINCT slot FROM block_record ORDER BY slot DESC LIMIT ? OFFSET ?";
+        if (sqlite3_prepare_v2(self.raw, sql, -1, &stmt, null) != SQLITE_OK or stmt == null) return error.SqlitePrepareFailed;
+        const st = stmt.?;
+        _ = sqlite3_bind_int64(st, 1, @intCast(take));
+        _ = sqlite3_bind_int64(st, 2, @intCast(offset));
 
         var slots: std.ArrayList(u64) = .empty;
         errdefer slots.deinit(allocator);
         while (sqlite3_step(st) == SQLITE_ROW) {
             try slots.append(allocator, @intCast(sqlite3_column_int64(st, 0)));
         }
-        return slots.toOwnedSlice(allocator);
+        const has_more = slots.items.len > limit;
+        if (has_more) {
+            _ = slots.pop();
+        }
+        return .{
+            .slots = try slots.toOwnedSlice(allocator),
+            .has_more = has_more,
+        };
     }
 };

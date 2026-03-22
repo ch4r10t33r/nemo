@@ -8,10 +8,49 @@ Lightweight block/slot explorer for the **Lean Ethereum** consensus chain, inspi
 |------|---------|-------------|
 | **`backend/`** | **Nemo backend** (Zig) | HTTP server, SQLite, Lean `/lean/v0/*` client. Sources: `backend/src/`. Build: [`scripts/build.sh`](scripts/build.sh) or `zig build` from repo root. See [backend/README.md](backend/README.md). |
 | **`frontend/`** | **Nemo frontend** (React) | Vite + React UI; build output `frontend/dist/`. See [frontend/README.md](frontend/README.md). |
+| **`config/`** | **Examples** | [`quickstart.env.example`](config/quickstart.env.example) — copy to `.env` for quick start. |
 | Root | Integration | `build.zig`, `build.zig.zon`, [`scripts/`](scripts/), Docker Compose; long-form docs in [`docs/`](docs/). |
 
 - **Scope**: Consensus only (slots, blocks, fork choice, checkpoints)—no execution layer.
 - **Upstream**: Any client that exposes `/lean/v0/*` (e.g. **zeam** or **lean-spec-node**).
+
+## Quick start
+
+You need a **running Lean consensus HTTP API** (usually port **5052**) before Nemo can show data.
+
+1. **Install tooling** — See [Requirements](#requirements) (Zig, Node, SQLite dev libs). For Docker only, you still need Docker; the image builds Zig and Node inside the Dockerfile.
+
+2. **Configure** — Copy the example env file to `.env` in the **repo root** and edit `LEAN_API_URL` if your node is not at the default URL:
+
+   ```sh
+   cp config/quickstart.env.example .env
+   ```
+
+   Example file: [`config/quickstart.env.example`](config/quickstart.env.example) (all tunables are documented there). The repo [ignores `.env`](.gitignore) so your local settings are not committed.
+
+3. **Run a Lean node** — Start **zeam**, **lean-spec-node**, or a devnet from **lean-quickstart** so something serves `/lean/v0/*` on the host/port you put in `LEAN_API_URL`.
+
+4. **Start Nemo** — pick one:
+
+   **Binary (native Zig server + built UI)**
+
+   ```sh
+   set -a && . ./.env && set +a   # bash/zsh: export variables from .env
+   ./scripts/build.sh
+   ./zig-out/bin/nemo
+   ```
+
+   Open **http://127.0.0.1:5053** (or your `NEMO_PORT`).
+
+   **Docker**
+
+   ```sh
+   ./scripts/run-docker.sh
+   ```
+
+   Compose uses `.env` for `LEAN_API_URL` (defaults to `host.docker.internal:5052` if unset). Same URL in the browser: **http://127.0.0.1:5053**.
+
+5. **Optional** — Reset SQLite if you changed chains or want a clean cache: `./scripts/clear-db.sh` (binary) or `./scripts/clear-db.sh --docker` (container volume).
 
 ## Docs
 
@@ -97,7 +136,7 @@ docker buildx use nemo-multiarch
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `LEAN_API_URL` | `http://127.0.0.1:5052` | Comma-separated upstream base URLs (no trailing slash). |
+| `LEAN_API_URL` | `http://127.0.0.1:5052` | Comma-separated upstream base URLs (no trailing slash), **first to last**. Each request tries URLs in order until one succeeds (HTTP failure, bad JSON, or DB write failure skips to the next). |
 | `NEMO_PORT` | `5053` | Listen port. |
 | `NEMO_DB_PATH` | `nemo.db` | SQLite file path. |
 | `WEB_DIST` | `frontend/dist` | Directory with `index.html` and `assets/`. |

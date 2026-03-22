@@ -24,5 +24,4 @@ pub const ForkChoice = struct {
 
 pub const Health = struct {
     status: []const u8,
-    service: []const u8,
 };
