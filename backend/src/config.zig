@@ -1,5 +1,8 @@
 const std = @import("std");
 
+// Align with leanSpec `SECONDS_PER_SLOT` (`lean_spec/subspecs/chain/config.py`).
+const default_sync_interval_sec: u64 = 4;
+
 pub const Config = struct {
     lean_urls: [][]const u8,
     port: u16,
@@ -60,7 +63,7 @@ pub const Config = struct {
                 defer allocator.free(s);
                 break :blk try std.fmt.parseInt(u64, s, 10);
             } else |_| {
-                break :blk 5;
+                break :blk default_sync_interval_sec;
             }
         };
 
