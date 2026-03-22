@@ -2,6 +2,8 @@ services:
   nemo:
     build:
       context: .
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     ports:
       - "5053:5053"
     environment:

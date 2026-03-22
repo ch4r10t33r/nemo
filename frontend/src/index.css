@@ -24,6 +24,16 @@ body {
   min-height: 100vh;
 }
 
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell > main {
+  flex: 1;
+}
+
 a {
   color: var(--accent);
   text-decoration: none;
@@ -69,9 +79,29 @@ header .sub {
   font-size: 0.85rem;
 }
 
-main {
+.app-shell > main {
   padding: 1.25rem;
   max-width: 1100px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.app-footer {
+  margin-top: auto;
+  padding: 0.85rem 1.25rem;
+  border-top: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.app-footer p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.app-footer a {
+  color: var(--accent);
 }
 
 .panel {

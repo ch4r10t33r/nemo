@@ -1,6 +1,8 @@
 # frontend/ — React (Vite) UI
 FROM node:22-alpine AS frontend
 WORKDIR /frontend
+ARG GIT_COMMIT=unknown
+ENV VITE_APP_GIT_SHA=${GIT_COMMIT}
 COPY frontend/package.json ./
 RUN npm install
 COPY frontend/ ./

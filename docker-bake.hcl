@@ -6,6 +6,10 @@ variable "IMAGE_NAME" {
   default = "nemo:latest"
 }
 
+variable "GIT_COMMIT" {
+  default = "unknown"
+}
+
 group "default" {
   targets = ["nemo"]
 }
@@ -15,4 +19,7 @@ target "nemo" {
   dockerfile = "Dockerfile"
   platforms  = ["linux/amd64", "linux/arm64"]
   tags       = [IMAGE_NAME]
+  args = {
+    GIT_COMMIT = GIT_COMMIT
+  }
 }
