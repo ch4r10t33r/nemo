@@ -1,0 +1,23 @@
+services:
+  nemo:
+    build:
+      context: .
+      # linux/amd64 + linux/arm64 (requires BuildKit / buildx)
+      platforms:
+        - linux/amd64
+        - linux/arm64
+    ports:
+      - "5053:5053"
+    environment:
+      LEAN_API_URL: ${LEAN_API_URL:-http://host.docker.internal:5052}
+      NEMO_PORT: "5053"
+      NEMO_DB_PATH: /data/nemo.db
+      SYNC_INTERVAL_SEC: "5"
+      WEB_DIST: /app/frontend/dist
+    volumes:
+      - nemo-data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  nemo-data:

@@ -1,0 +1,6 @@
+.zig-cache/
+zig-out/
+frontend/node_modules/
+frontend/dist/
+*.db
+.DS_Store
