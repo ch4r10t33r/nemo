@@ -239,13 +239,13 @@ pub const App = struct {
             return;
         }
 
-        if (std.mem.eql(u8, path_only, "/") or std.mem.eql(u8, path_only, "/index.html")) {
-            self.serveIndex(&request) catch respond404(&request) catch {};
+        // SPA: /slots, /block/…, /slot/… must get index.html (full shell including footer).
+        if (std.mem.startsWith(u8, path_only, "/api/")) {
+            respond404(&request) catch {};
             connection.stream.close();
             return;
         }
-
-        respond404(&request) catch {};
+        self.serveIndex(&request) catch respond404(&request) catch {};
         connection.stream.close();
     }
 

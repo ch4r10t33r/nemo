@@ -30,10 +30,6 @@ body {
   flex-direction: column;
 }
 
-.app-shell > main {
-  flex: 1;
-}
-
 a {
   color: var(--accent);
   text-decoration: none;
@@ -80,6 +76,8 @@ header .sub {
 }
 
 .app-shell > main {
+  flex: 1;
+  min-height: 0;
   padding: 1.25rem;
   max-width: 1100px;
   width: 100%;
@@ -87,6 +85,7 @@ header .sub {
 }
 
 .app-footer {
+  flex-shrink: 0;
   margin-top: auto;
   padding: 0.85rem 1.25rem;
   border-top: 1px solid var(--border);
